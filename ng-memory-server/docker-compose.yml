@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  ng-memory-server:
+    image: nodeghost/ng-memory-server:latest
+    # Or build locally:
+    # build: .
+    container_name: ng-memory-server
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./data:/data
+    environment:
+      - PORT=3100
+      - DATA_DIR=/data
+      - MAX_MEMORIES=2000
+      - INFERENCE_URL=https://nodeghost.ai/v1
+      - CORS_ORIGINS=*
+      # Optional: restrict to specific ng- keys
+      # - ALLOWED_KEYS=ng-key1,ng-key2

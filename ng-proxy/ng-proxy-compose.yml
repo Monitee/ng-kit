@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  nodeghost-proxy:
+    build: .
+    ports:
+      - "3200:3200"
+    environment:
+      - NG_KEY=ng-your-key-here
+      - MODEL=deepseek-chat
+      - NAMESPACE=knowledge-base
+      - MEMORY_URL=http://your-memory-server:3100
+      - SYSTEM_PROMPT=You are a helpful assistant for Acme Corp. Use the provided context to answer questions accurately.
+      - ALLOWED_ORIGINS=https://yourwebsite.com
+      - PORT=3200
+    restart: unless-stopped

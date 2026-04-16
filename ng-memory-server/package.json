@@ -1,0 +1,24 @@
+{
+  "name": "ng-memory-server",
+  "version": "0.3.0",
+  "description": "Self-hosted private AI memory server with built-in document ingestion and RAG. Supports PDF, TXT, MD.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev":   "node --watch server.js"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "better-sqlite3": "^9.4.3",
+    "pdf-parse-new": "^1.0.0"
+  },
+  "keywords": [
+    "ai", "memory", "rag", "llm", "vector", "embeddings", "nodeghost", "pokt", "self-hosted", "private"
+  ],
+  "author": "NodeGhost",
+  "license": "MIT",
+  "homepage": "https://nodeghost.ai",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ng-memory — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0a0c10;
+    --bg2:     #0f1318;
+    --surface: #141920;
+    --border:  rgba(255,255,255,0.06);
+    --accent:  #00e5ff;
+    --accent-d: rgba(0,229,255,0.08);
+    --text:    #e2e8f0;
+    --mid:     #8899aa;
+    --dim:     #4a5568;
+    --green:   #00e5a0;
+    --red:     #ff4560;
+    --yellow:  #f5c842;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* Login screen */
+  .login-wrap {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .login-box {
+    width: 380px;
+    padding: 48px 40px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+  }
+
+  .login-logo {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 20px; font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: -0.3px;
+  }
+  .login-logo span { color: var(--accent); }
+
+  .login-sub {
+    font-size: 10px; letter-spacing: 2px; color: var(--dim);
+    text-transform: uppercase; margin-bottom: 36px;
+  }
+
+  .field-label {
+    font-size: 9px; letter-spacing: 2px; color: var(--dim);
+    text-transform: uppercase; margin-bottom: 7px;
+  }
+
+  .field-input {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; padding: 10px 14px; outline: none;
+    transition: border-color 0.2s; margin-bottom: 16px;
+  }
+  .field-input:focus { border-color: rgba(0,229,255,0.35); }
+  .field-input::placeholder { color: var(--dim); }
+
+  .login-btn {
+    width: 100%; background: var(--accent); border: none;
+    color: var(--bg); font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; letter-spacing: 1px; padding: 11px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .login-btn:hover { background: #33eaff; }
+
+  .login-err {
+    font-size: 10px; color: var(--red); margin-top: 10px;
+    text-align: center; min-height: 16px; letter-spacing: 0.3px;
+  }
+
+  /* Main layout */
+  .app { display: none; flex-direction: column; min-height: 100vh; }
+  .app.visible { display: flex; }
+
+  /* Header */
+  header {
+    height: 52px; padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,12,16,0.95);
+    backdrop-filter: blur(20px);
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .h-logo {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .h-logo span { color: var(--accent); }
+  .h-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px; letter-spacing: 2px; color: var(--dim);
+    text-transform: uppercase;
+    padding: 3px 8px; border: 1px solid var(--border);
+  }
+
+  .h-right {
+    display: flex; align-items: center; gap: 16px;
+    font-size: 10px; color: var(--dim); letter-spacing: 0.5px;
+  }
+
+  .h-server {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .h-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+  .logout-btn {
+    background: none; border: none; color: var(--dim);
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    cursor: pointer; letter-spacing: 0.5px; transition: color 0.2s;
+  }
+  .logout-btn:hover { color: var(--red); }
+
+  /* Main content */
+  .main {
+    flex: 1; display: flex;
+    max-width: 1200px; width: 100%;
+    margin: 0 auto; padding: 32px 28px; gap: 28px;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+
+  .nav-label {
+    font-size: 9px; letter-spacing: 2px; color: var(--dim);
+    text-transform: uppercase; padding: 0 12px; margin-bottom: 6px;
+    margin-top: 16px;
+  }
+  .nav-label:first-child { margin-top: 0; }
+
+  .nav-item {
+    padding: 8px 12px; cursor: pointer;
+    font-size: 11px; color: var(--mid); letter-spacing: 0.3px;
+    transition: all 0.15s; border: 1px solid transparent;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nav-item:hover { color: var(--text); background: var(--surface); }
+  .nav-item.active {
+    color: var(--accent); background: var(--accent-d);
+    border-color: rgba(0,229,255,0.15);
+  }
+  .nav-item .nav-icon { font-size: 12px; width: 16px; text-align: center; }
+
+  /* Content area */
+  .content { flex: 1; min-width: 0; }
+
+  /* Section */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .section-header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .section-title {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 16px; font-weight: 600; letter-spacing: -0.3px;
+  }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 16px; margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 20px 22px;
+  }
+
+  .stat-value {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 28px; font-weight: 700; color: var(--accent);
+    line-height: 1; margin-bottom: 6px;
+  }
+  .stat-label {
+    font-size: 9px; letter-spacing: 2px; color: var(--dim);
+    text-transform: uppercase;
+  }
+
+  /* Namespace list */
+  .ns-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .ns-card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: border-color 0.15s; cursor: pointer;
+  }
+  .ns-card:hover { border-color: rgba(0,229,255,0.2); }
+  .ns-card.selected { border-color: rgba(0,229,255,0.3); background: var(--accent-d); }
+
+  .ns-name {
+    font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px;
+  }
+  .ns-public {
+    font-size: 9px; letter-spacing: 1px; color: var(--green);
+    background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.2);
+    padding: 2px 7px;
+  }
+  .ns-private {
+    font-size: 9px; letter-spacing: 1px; color: var(--dim);
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    padding: 2px 7px;
+  }
+  .ns-meta { font-size: 10px; color: var(--dim); }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 1px dashed rgba(0,229,255,0.2);
+    padding: 40px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: var(--accent-d);
+    position: relative; margin-bottom: 20px;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: rgba(0,229,255,0.5);
+    background: rgba(0,229,255,0.1);
+  }
+  .upload-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .upload-icon { font-size: 32px; margin-bottom: 12px; }
+  .upload-text { font-size: 12px; color: var(--mid); line-height: 1.8; }
+  .upload-text span { color: var(--accent); }
+  .upload-types { font-size: 10px; color: var(--dim); margin-top: 6px; letter-spacing: 0.5px; }
+
+  /* Progress bar */
+  .upload-progress {
+    display: none; margin-bottom: 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 14px 18px;
+  }
+  .upload-progress.visible { display: block; }
+  .progress-label { font-size: 11px; color: var(--mid); margin-bottom: 8px; }
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-fill {
+    height: 100%; background: var(--accent);
+    border-radius: 2px; transition: width 0.3s;
+    width: 0;
+  }
+  .progress-fill.done { background: var(--green); width: 100%; }
+  .progress-fill.error { background: var(--red); width: 100%; }
+
+  /* Source list */
+  .source-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .source-item {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+
+  .source-icon { font-size: 16px; flex-shrink: 0; }
+  .source-info { flex: 1; min-width: 0; }
+  .source-name { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .source-meta { font-size: 10px; color: var(--dim); margin-top: 3px; letter-spacing: 0.3px; }
+
+  .source-del {
+    background: none; border: 1px solid var(--border);
+    color: var(--dim); font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; padding: 5px 10px; cursor: pointer;
+    transition: all 0.15s; flex-shrink: 0;
+  }
+  .source-del:hover { border-color: rgba(255,69,96,0.3); color: var(--red); }
+
+  .empty-state {
+    padding: 40px; text-align: center;
+    color: var(--dim); font-size: 11px; letter-spacing: 0.5px;
+    line-height: 1.8; background: var(--surface); border: 1px solid var(--border);
+  }
+
+  /* Namespace selector */
+  .ns-selector {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
+  }
+  .ns-selector label { font-size: 10px; letter-spacing: 1.5px; color: var(--dim); text-transform: uppercase; }
+  .ns-select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; padding: 7px 12px; outline: none;
+    transition: border-color 0.2s; cursor: pointer;
+  }
+  .ns-select:focus { border-color: rgba(0,229,255,0.3); }
+
+  /* Action button */
+  .btn {
+    background: var(--accent-d); border: 1px solid rgba(0,229,255,0.2);
+    color: var(--accent); font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; letter-spacing: 0.5px; padding: 8px 16px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .btn:hover { background: rgba(0,229,255,0.15); }
+  .btn.danger { background: rgba(255,69,96,0.06); border-color: rgba(255,69,96,0.2); color: var(--red); }
+  .btn.danger:hover { background: rgba(255,69,96,0.12); }
+
+  /* Memory list */
+  .memory-list { display: flex; flex-direction: column; gap: 6px; max-height: 500px; overflow-y: auto; }
+  .memory-list::-webkit-scrollbar { width: 3px; }
+  .memory-list::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.1); }
+
+  .memory-item {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 10px 14px; display: flex; align-items: flex-start; gap: 10px;
+  }
+  .memory-text { flex: 1; font-size: 11px; color: var(--mid); line-height: 1.6; }
+  .memory-source { font-size: 9px; color: var(--dim); margin-top: 3px; letter-spacing: 0.3px; }
+  .memory-del {
+    background: none; border: none; color: var(--dim);
+    cursor: pointer; font-size: 12px; flex-shrink: 0; transition: color 0.15s;
+  }
+  .memory-del:hover { color: var(--red); }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 28px; right: 28px;
+    background: var(--surface); border: 1px solid rgba(0,229,160,0.3);
+    color: var(--green); padding: 12px 20px; font-size: 11px;
+    letter-spacing: 0.5px; opacity: 0; transition: opacity 0.3s; z-index: 999;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { border-color: rgba(255,69,96,0.3); color: var(--red); }
+
+  /* Integration guide */
+  .code-block {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 16px 18px; font-size: 11px; color: var(--mid);
+    line-height: 1.8; margin-bottom: 16px; overflow-x: auto;
+    white-space: pre;
+  }
+  .code-block .hl { color: var(--accent); }
+  .code-block .str { color: var(--green); }
+  .code-block .comment { color: var(--dim); }
+
+  .guide-section { margin-bottom: 28px; }
+  .guide-title {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text);
+  }
+  .guide-text { font-size: 11px; color: var(--mid); line-height: 1.8; margin-bottom: 10px; }
+
+  @media (max-width: 768px) {
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .sidebar { display: none; }
+    .main { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-box">
+    <div class="login-logo">ng-<span>memory</span></div>
+    <div class="login-sub">Admin Panel</div>
+    <div class="field-label">Server URL</div>
+    <input type="text" class="field-input" id="loginUrl" placeholder="http://localhost:3100" value="">
+    <div class="field-label">NodeGhost API Key</div>
+    <input type="password" class="field-input" id="loginKey" placeholder="ng-xxxxxxxxxxxxxxxx">
+    <button class="login-btn" id="loginBtn">Connect →</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- Main app -->
+<div class="app" id="app">
+  <header>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div class="h-logo">ng-<span>memory</span></div>
+      <div class="h-badge">Admin</div>
+    </div>
+    <div class="h-right">
+      <div class="h-server">
+        <div class="h-dot"></div>
+        <span id="serverUrlLabel"></span>
+      </div>
+      <button class="logout-btn" id="logoutBtn">Disconnect</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="nav-label">Knowledge</div>
+      <div class="nav-item active" data-section="upload">
+        <span class="nav-icon">📄</span> Upload Docs
+      </div>
+      <div class="nav-item" data-section="sources">
+        <span class="nav-icon">📚</span> Sources
+      </div>
+      <div class="nav-label">Memory</div>
+      <div class="nav-item" data-section="memories">
+        <span class="nav-icon">◈</span> Browse Memories
+      </div>
+      <div class="nav-label">Setup</div>
+      <div class="nav-item" data-section="namespaces">
+        <span class="nav-icon">⊞</span> Namespaces
+      </div>
+      <div class="nav-item" data-section="integrate">
+        <span class="nav-icon">⟨/⟩</span> Integration
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- Upload section -->
+      <div class="section active" id="section-upload">
+        <div class="section-header">
+          <div class="section-title">Upload Documents</div>
+        </div>
+
+        <div class="ns-selector">
+          <label>Namespace</label>
+          <select class="ns-select" id="uploadNamespace">
+            <option value="knowledge-base">knowledge-base (public)</option>
+            <option value="default">default (private)</option>
+          </select>
+        </div>
+
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept=".pdf,.txt,.md,.markdown" multiple>
+          <div class="upload-icon">📄</div>
+          <div class="upload-text">
+            Drop files here or <span>click to browse</span>
+          </div>
+          <div class="upload-types">PDF · TXT · MD · MARKDOWN</div>
+        </div>
+
+        <div class="upload-progress" id="uploadProgress">
+          <div class="progress-label" id="progressLabel">Uploading...</div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <div id="uploadResults"></div>
+      </div>
+
+      <!-- Sources section -->
+      <div class="section" id="section-sources">
+        <div class="section-header">
+          <div class="section-title">Ingested Sources</div>
+          <div style="display:flex;gap:8px;">
+            <select class="ns-select" id="sourcesNamespace" style="font-size:10px;padding:5px 10px;">
+              <option value="knowledge-base">knowledge-base</option>
+              <option value="default">default</option>
+            </select>
+            <button class="btn" id="refreshSourcesBtn">↻ Refresh</button>
+          </div>
+        </div>
+        <div class="source-list" id="sourceList">
+          <div class="empty-state">Loading sources...</div>
+        </div>
+      </div>
+
+      <!-- Memories section -->
+      <div class="section" id="section-memories">
+        <div class="section-header">
+          <div class="section-title">Memory Browser</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="ns-select" id="memoriesNamespace" style="font-size:10px;padding:5px 10px;">
+              <option value="default">default</option>
+              <option value="knowledge-base">knowledge-base</option>
+            </select>
+            <button class="btn" id="refreshMemoriesBtn">↻ Refresh</button>
+            <button class="btn danger" id="clearMemoriesBtn">✕ Clear All</button>
+          </div>
+        </div>
+        <div class="memory-list" id="memoryList">
+          <div class="empty-state">Loading memories...</div>
+        </div>
+      </div>
+
+      <!-- Namespaces section -->
+      <div class="section" id="section-namespaces">
+        <div class="section-header">
+          <div class="section-title">Namespaces</div>
+          <button class="btn" id="refreshNsBtn">↻ Refresh</button>
+        </div>
+        <div class="ns-list" id="nsList">
+          <div class="empty-state">Loading namespaces...</div>
+        </div>
+      </div>
+
+      <!-- Integration section -->
+      <div class="section" id="section-integrate">
+        <div class="section-header">
+          <div class="section-title">Integration Guide</div>
+        </div>
+
+        <div class="guide-section">
+          <div class="guide-title">Point any OpenAI-compatible chat UI here</div>
+          <div class="guide-text">Any chat interface that supports a custom base URL works with NodeGhost out of the box. Just set these values:</div>
+          <div class="code-block"><span class="hl">Base URL:</span>  <span class="str" id="guideBaseUrl">https://nodeghost.ai/v1</span>
+<span class="hl">API Key:</span>   <span class="str" id="guideApiKey">ng-your-key</span>
+<span class="hl">Model:</span>     <span class="str">deepseek-chat</span>  <span class="comment">// or your own model</span></div>
+        </div>
+
+        <div class="guide-section">
+          <div class="guide-title">Query your knowledge base (no auth required)</div>
+          <div class="guide-text">Use the public recall endpoint so customer-facing agents can query your knowledge base without exposing your ng- key:</div>
+          <div class="code-block"><span class="hl">POST</span> <span class="str" id="guideMemUrl">http://your-server:3100</span>/public/recall
+
+{
+  <span class="str">"query"</span>: <span class="str">"what is your refund policy?"</span>,
+  <span class="str">"namespace"</span>: <span class="str">"knowledge-base"</span>
+}
+
+<span class="comment">// Headers:</span>
+<span class="str">X-Owner-Token</span>: ng-your-key  <span class="comment">// never exposed to customers</span></div>
+        </div>
+
+        <div class="guide-section">
+          <div class="guide-title">Compatible chat interfaces</div>
+          <div class="guide-text">These open-source chat UIs work with any OpenAI-compatible API:</div>
+          <div class="code-block"><span class="hl">Open WebUI</span>     — Self-hosted, full featured
+<span class="hl">LibreChat</span>      — Open source ChatGPT alternative  
+<span class="hl">Chatbot UI</span>     — Clean minimal interface
+<span class="hl">Jan</span>            — Desktop app, local + cloud models
+<span class="hl">AnythingLLM</span>    — Business focused, team features</div>
+        </div>
+
+        <div class="guide-section">
+          <div class="guide-title">npm package</div>
+          <div class="code-block">npm install ng-memory
+
+<span class="hl">const</span> { NGMemory } = require(<span class="str">'ng-memory'</span>);
+
+<span class="hl">const</span> memory = <span class="hl">new</span> NGMemory({
+  apiKey:     <span class="str">'ng-your-key'</span>,
+  storageUrl: <span class="str" id="guideNpmUrl">'http://your-server:3100'</span>,
+});
+
+<span class="hl">await</span> memory.init();
+messages = <span class="hl">await</span> memory.recall(userMessage, messages);
+<span class="hl">await</span> memory.remember(userMessage, assistantResponse);</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var state = {
+  url: localStorage.getItem('ngm_url') || '',
+  key: localStorage.getItem('ngm_key') || '',
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  if (state.url && state.key) {
+    document.getElementById('loginUrl').value = state.url;
+    document.getElementById('loginKey').value = state.key;
+    connect();
+  }
+  wireEvents();
+});
+
+function wireEvents() {
+  document.getElementById('loginBtn').addEventListener('click', connect);
+  document.getElementById('loginKey').addEventListener('keydown', function(e) { if (e.key === 'Enter') connect(); });
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+
+  // Nav
+  document.querySelectorAll('.nav-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      var section = this.dataset.section;
+      document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
+      document.querySelectorAll('.section').forEach(function(s) { s.classList.remove('active'); });
+      this.classList.add('active');
+      document.getElementById('section-' + section).classList.add('active');
+      if (section === 'sources')    loadSources();
+      if (section === 'memories')   loadMemories();
+      if (section === 'namespaces') loadNamespaces();
+    });
+  });
+
+  // Upload
+  var zone = document.getElementById('uploadZone');
+  var fileInput = document.getElementById('fileInput');
+
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault(); zone.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', function() { handleFiles(this.files); this.value = ''; });
+
+  // Refresh buttons
+  document.getElementById('refreshSourcesBtn').addEventListener('click', loadSources);
+  document.getElementById('refreshMemoriesBtn').addEventListener('click', loadMemories);
+  document.getElementById('refreshNsBtn').addEventListener('click', loadNamespaces);
+  document.getElementById('clearMemoriesBtn').addEventListener('click', clearMemories);
+
+  // Namespace change
+  document.getElementById('sourcesNamespace').addEventListener('change', loadSources);
+  document.getElementById('memoriesNamespace').addEventListener('change', loadMemories);
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function connect() {
+  var url = document.getElementById('loginUrl').value.trim().replace(/\/$/, '');
+  var key = document.getElementById('loginKey').value.trim();
+  var err = document.getElementById('loginErr');
+
+  if (!url || !key) { err.textContent = 'Server URL and API key required'; return; }
+  if (!key.startsWith('ng-')) { err.textContent = 'API key must start with ng-'; return; }
+
+  document.getElementById('loginBtn').textContent = 'Connecting...';
+  err.textContent = '';
+
+  try {
+    var res = await fetch(url + '/health');
+    if (!res.ok) throw new Error('Server returned ' + res.status);
+    var data = await res.json();
+    if (data.status !== 'ok') throw new Error('Server not healthy');
+
+    state.url = url;
+    state.key = key;
+    localStorage.setItem('ngm_url', url);
+    localStorage.setItem('ngm_key', key);
+
+    document.getElementById('loginWrap').style.display = 'none';
+    document.getElementById('app').classList.add('visible');
+    document.getElementById('serverUrlLabel').textContent = url.replace('http://', '').replace('https://', '');
+
+    // Update integration guide URLs
+    document.getElementById('guideBaseUrl').textContent = 'https://nodeghost.ai/v1';
+    document.getElementById('guideMemUrl').textContent  = url;
+    document.getElementById('guideNpmUrl').textContent  = "'" + url + "'";
+    document.getElementById('guideApiKey').textContent  = key;
+
+    loadSources();
+  } catch (e) {
+    err.textContent = 'Could not connect: ' + e.message;
+  }
+  document.getElementById('loginBtn').textContent = 'Connect →';
+}
+
+function logout() {
+  localStorage.removeItem('ngm_url');
+  localStorage.removeItem('ngm_key');
+  state = { url: '', key: '' };
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('loginKey').value = '';
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+function api(method, path, body) {
+  var opts = {
+    method:  method,
+    headers: { 'Authorization': 'Bearer ' + state.key },
+  };
+  if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  return fetch(state.url + path, opts).then(function(r) { return r.json(); });
+}
+
+// ── File upload ───────────────────────────────────────────────────────────────
+async function handleFiles(files) {
+  if (!files || !files.length) return;
+  var namespace = document.getElementById('uploadNamespace').value;
+  var prog      = document.getElementById('uploadProgress');
+  var fill      = document.getElementById('progressFill');
+  var label     = document.getElementById('progressLabel');
+  var results   = document.getElementById('uploadResults');
+
+  results.innerHTML = '';
+  prog.classList.add('visible');
+  fill.className    = 'progress-fill';
+  fill.style.width  = '0%';
+
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    label.textContent = 'Processing ' + file.name + ' (' + (i+1) + '/' + files.length + ')...';
+    fill.style.width  = Math.round((i / files.length) * 80) + '%';
+
+    try {
+      var fd = new FormData();
+      fd.append('file', file);
+      fd.append('namespace', namespace);
+
+      var res = await fetch(state.url + '/upload', {
+        method:  'POST',
+        headers: { 'Authorization': 'Bearer ' + state.key },
+        body:    fd,
+      });
+
+      // Handle streaming response
+      var reader  = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf     = '';
+      var lastData = null;
+
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var lines = buf.split('\n');
+        buf = lines.pop();
+        for (var j = 0; j < lines.length; j++) {
+          if (lines[j].trim()) {
+            try { lastData = JSON.parse(lines[j]); } catch {}
+          }
+        }
+      }
+
+      if (lastData && lastData.ok) {
+        var item = document.createElement('div');
+        item.style.cssText = 'padding:10px 14px;background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.15);color:var(--green);font-size:11px;margin-bottom:6px;';
+        item.textContent = '✓ ' + file.name + ' — ' + lastData.chunks + ' chunks stored in "' + namespace + '"';
+        results.appendChild(item);
+      } else {
+        throw new Error(lastData ? lastData.error : 'Upload failed');
+      }
+    } catch (e) {
+      var item = document.createElement('div');
+      item.style.cssText = 'padding:10px 14px;background:rgba(255,69,96,0.06);border:1px solid rgba(255,69,96,0.15);color:var(--red);font-size:11px;margin-bottom:6px;';
+      item.textContent = '✗ ' + file.name + ' — ' + e.message;
+      results.appendChild(item);
+    }
+  }
+
+  fill.style.width = '100%';
+  fill.className   = 'progress-fill done';
+  label.textContent = 'Done — ' + files.length + ' file' + (files.length !== 1 ? 's' : '') + ' processed';
+  setTimeout(function() { prog.classList.remove('visible'); }, 4000);
+  showToast('✓ Upload complete');
+}
+
+// ── Sources ───────────────────────────────────────────────────────────────────
+async function loadSources() {
+  var ns   = document.getElementById('sourcesNamespace').value;
+  var list = document.getElementById('sourceList');
+  list.innerHTML = '<div class="empty-state">Loading...</div>';
+
+  try {
+    var data = await api('GET', '/sources', null);
+    // Pass namespace header
+    var res  = await fetch(state.url + '/sources', {
+      headers: { 'Authorization': 'Bearer ' + state.key, 'X-Namespace': ns }
+    });
+    data = await res.json();
+
+    if (!data.sources || !data.sources.length) {
+      list.innerHTML = '<div class="empty-state">No documents ingested yet in "' + ns + '".<br>Upload some files to get started.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    data.sources.forEach(function(s) {
+      var ext  = (s.source.split('.').pop() || '').toLowerCase();
+      var icon = ext === 'pdf' ? '📕' : ext === 'md' ? '📝' : '📄';
+      var item = document.createElement('div');
+      item.className = 'source-item';
+      item.innerHTML = '<span class="source-icon">' + icon + '</span>' +
+        '<div class="source-info">' +
+          '<div class="source-name">' + esc(s.source) + '</div>' +
+          '<div class="source-meta">' + s.chunks + ' chunks · namespace: ' + ns + '</div>' +
+        '</div>' +
+        '<button class="source-del" data-source="' + esc(s.source) + '" data-ns="' + ns + '">Remove</button>';
+      list.appendChild(item);
+    });
+
+    list.querySelectorAll('.source-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        removeSource(this.dataset.source, this.dataset.ns);
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state" style="color:var(--red)">Error loading sources: ' + e.message + '</div>';
+  }
+}
+
+async function removeSource(source, ns) {
+  if (!confirm('Remove all chunks from "' + source + '"?')) return;
+  try {
+    await fetch(state.url + '/source', {
+      method:  'DELETE',
+      headers: { 'Authorization': 'Bearer ' + state.key, 'Content-Type': 'application/json', 'X-Namespace': ns },
+      body:    JSON.stringify({ source: source, namespace: ns }),
+    });
+    showToast('✓ Removed ' + source);
+    loadSources();
+  } catch (e) {
+    showToast('✗ ' + e.message, true);
+  }
+}
+
+// ── Memories ──────────────────────────────────────────────────────────────────
+async function loadMemories() {
+  var ns   = document.getElementById('memoriesNamespace').value;
+  var list = document.getElementById('memoryList');
+  list.innerHTML = '<div class="empty-state">Loading...</div>';
+
+  try {
+    var res  = await fetch(state.url + '/list', {
+      headers: { 'Authorization': 'Bearer ' + state.key, 'X-Namespace': ns }
+    });
+    var data = await res.json();
+
+    if (!data.memories || !data.memories.length) {
+      list.innerHTML = '<div class="empty-state">No memories in "' + ns + '" yet.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    var sorted = data.memories.slice().sort(function(a,b) { return b.timestamp - a.timestamp; });
+    sorted.forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'memory-item';
+      var isEncrypted = m.text && m.text.length > 40 && !/\s/.test(m.text.slice(0, 20));
+      var displayText = isEncrypted ? '<span style="color:var(--dim)">🔒 encrypted</span>' : esc(m.text);
+      item.innerHTML = '<div class="memory-text">' + displayText +
+        '<div class="memory-source">' + esc((m.meta && m.meta.source) || 'unknown') + ' · ' + new Date(m.timestamp).toLocaleDateString() + '</div>' +
+        '</div>' +
+        '<button class="memory-del" data-id="' + esc(m.id) + '" data-ns="' + ns + '">✕</button>';
+      list.appendChild(item);
+    });
+
+    list.querySelectorAll('.memory-del').forEach(function(btn) {
+      btn.addEventListener('click', function() { deleteMemory(this.dataset.id, this.dataset.ns); });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state" style="color:var(--red)">Error: ' + e.message + '</div>';
+  }
+}
+
+async function deleteMemory(id, ns) {
+  try {
+    await fetch(state.url + '/memories/' + encodeURIComponent(id), {
+      method:  'DELETE',
+      headers: { 'Authorization': 'Bearer ' + state.key, 'X-Namespace': ns },
+    });
+    loadMemories();
+  } catch {}
+}
+
+async function clearMemories() {
+  var ns = document.getElementById('memoriesNamespace').value;
+  if (!confirm('Clear all memories in "' + ns + '"? This cannot be undone.')) return;
+  try {
+    await fetch(state.url + '/memories', {
+      method:  'DELETE',
+      headers: { 'Authorization': 'Bearer ' + state.key, 'X-Namespace': ns },
+    });
+    showToast('✓ Cleared all memories in ' + ns);
+    loadMemories();
+  } catch (e) {
+    showToast('✗ ' + e.message, true);
+  }
+}
+
+// ── Namespaces ────────────────────────────────────────────────────────────────
+async function loadNamespaces() {
+  var list = document.getElementById('nsList');
+  list.innerHTML = '<div class="empty-state">Loading...</div>';
+
+  try {
+    var data = await api('GET', '/namespaces');
+    if (!data.namespaces || !data.namespaces.length) {
+      list.innerHTML = '<div class="empty-state">No namespaces yet.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    data.namespaces.forEach(function(ns) {
+      var item = document.createElement('div');
+      item.className = 'ns-card';
+      item.innerHTML = '<div class="ns-name">' + esc(ns.namespace) +
+        (ns.isPublic ? '<span class="ns-public">PUBLIC</span>' : '<span class="ns-private">PRIVATE</span>') +
+        '</div>' +
+        '<div class="ns-meta">' + ns.count + ' memories · ' + (ns.ragEnabled ? '✓ RAG enabled' : 'keyword search') + '</div>';
+      list.appendChild(item);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state" style="color:var(--red)">Error: ' + e.message + '</div>';
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, error) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = 'toast' + (error ? ' error' : '') + ' show';
+  setTimeout(function() { t.classList.remove('show'); }, 3000);
+}
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
