@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ng-memory-server v0.3.0
 // Self-hosted private AI memory server with built-in document ingestion
-// Supports: PDF, TXT, MD — chunked, embedded, stored automatically
+// Supports: PDF, TXT, MD, HTML — chunked, embedded, stored automatically
 // ─────────────────────────────────────────────────────────────────────────────
 
 const http   = require('http');
@@ -85,6 +85,31 @@ async function extractText(filePath, ext) {
     const buffer   = fs.readFileSync(filePath);
     const data     = await pdfParse(buffer);
     return data.text;
+  }
+  if (ext === '.html' || ext === '.htm') {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    // Strip script and style blocks entirely
+    let text = raw
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<head[\s\S]*?<\/head>/gi, ' ');
+    // Replace block elements with newlines for readability
+    text = text.replace(/<\/(p|div|h[1-6]|li|tr|section|article|header|footer|nav|main|aside|blockquote)>/gi, '\n');
+    // Strip all remaining tags
+    text = text.replace(/<[^>]+>/g, ' ');
+    // Decode common HTML entities
+    text = text
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&mdash;/g, '—')
+      .replace(/&ndash;/g, '–');
+    // Collapse whitespace
+    text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    return text;
   }
   // txt, md — just read
   return fs.readFileSync(filePath, 'utf8');
@@ -306,7 +331,7 @@ const server = http.createServer(async function(req, res) {
 
   // ── Health ─────────────────────────────────────────────────────────────────
   if (method === 'GET' && (url === '/health' || url === '/v1/memory/health' || url === '/memory/health')) {
-    json(res, 200, { status: 'ok', version: '0.3.0', timestamp: new Date().toISOString() });
+    json(res, 200, { status: 'ok', version: '0.4.0', timestamp: new Date().toISOString() });
     return;
   }
 
@@ -358,7 +383,7 @@ const server = http.createServer(async function(req, res) {
       if (!filename || !fileBuffer) { json(res, 400, { error: 'No file in request' }); return; }
 
       const ext     = path.extname(filename).toLowerCase();
-      const allowed = ['.pdf', '.txt', '.md', '.markdown'];
+      const allowed = ['.pdf', '.txt', '.md', '.markdown', '.html', '.htm'];
       if (!allowed.includes(ext)) {
         json(res, 400, { error: 'Unsupported file type. Supported: ' + allowed.join(', ') }); return;
       }
