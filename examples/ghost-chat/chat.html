@@ -569,6 +569,10 @@
         <div class="setup-field-label">Inference URL</div>
         <input type="text" class="setup-input" id="setupUrl" placeholder="https://nodeghost.ai/v1" value="https://nodeghost.ai/v1">
       </div>
+      <div>
+        <div class="setup-field-label">Endpoint API Key (optional — for BYOM custom endpoints)</div>
+        <input type="password" class="setup-input" id="setupEndpointKey" placeholder="sk-... or leave blank">
+      </div>
       <button class="setup-btn" id="setupSaveBtn">Start Chatting →</button>
       <div class="setup-note">
         Need an API key? <a href="https://nodeghost.ai/#pricing" target="_blank">Get one at nodeghost.ai</a><br>
@@ -669,6 +673,10 @@
         <div class="p-label">Inference URL</div>
         <input type="text" class="p-input" id="cfgUrl" placeholder="https://nodeghost.ai/v1">
       </div>
+      <div>
+        <div class="p-label">Endpoint API Key (optional — for BYOM custom endpoints)</div>
+        <input type="password" class="p-input" id="cfgEndpointKey" placeholder="sk-... or leave blank">
+      </div>
 
       <div class="p-saved" id="cfgSaved"></div>
       <button class="p-save" id="cfgSaveBtn">Save & Apply</button>
@@ -736,6 +744,7 @@ const TIMEOUT_MS   = 30000;
 
 let cfg = {
   apiKey: localStorage.getItem('ng_api_key') || '',
+  endpointKey: localStorage.getItem('ng_endpoint_key') || '',
   model:  localStorage.getItem('ng_model')   || 'deepseek-chat',
   url:    localStorage.getItem('ng_url')     || 'https://nodeghost.ai/v1',
 };
@@ -836,9 +845,10 @@ function applyConfig() {
   document.getElementById('modelBadge').textContent   = cfg.model;
 
   // Populate panel fields
-  document.getElementById('cfgApiKey').value = cfg.apiKey;
-  document.getElementById('cfgModel').value  = cfg.model;
-  document.getElementById('cfgUrl').value    = cfg.url;
+  document.getElementById('cfgApiKey').value     = cfg.apiKey;
+  document.getElementById('cfgModel').value       = cfg.model;
+  document.getElementById('cfgUrl').value         = cfg.url;
+  document.getElementById('cfgEndpointKey').value = cfg.endpointKey || '';
 
   // Show password screen or chat depending on encryption state
   if (encKey) {
@@ -851,25 +861,29 @@ function applyConfig() {
 }
 
 function saveFromSetup() {
-  var key   = document.getElementById('setupApiKey').value.trim();
-  var model = document.getElementById('setupModel').value.trim()  || 'deepseek-chat';
-  var url   = document.getElementById('setupUrl').value.trim()    || 'https://nodeghost.ai/v1';
+  var key         = document.getElementById('setupApiKey').value.trim();
+  var model       = document.getElementById('setupModel').value.trim()       || 'deepseek-chat';
+  var url         = document.getElementById('setupUrl').value.trim()         || 'https://nodeghost.ai/v1';
+  var endpointKey = document.getElementById('setupEndpointKey').value.trim() || '';
   if (!key) { document.getElementById('setupApiKey').style.borderColor = 'rgba(255,69,96,0.5)'; return; }
-  cfg = { apiKey: key, model: model, url: url };
-  localStorage.setItem('ng_api_key', key);
-  localStorage.setItem('ng_model',   model);
-  localStorage.setItem('ng_url',     url);
+  cfg = { apiKey: key, model: model, url: url, endpointKey: endpointKey };
+  localStorage.setItem('ng_api_key',      key);
+  localStorage.setItem('ng_model',        model);
+  localStorage.setItem('ng_url',          url);
+  localStorage.setItem('ng_endpoint_key', endpointKey);
   applyConfig();
 }
 
 function saveFromPanel() {
-  var key   = document.getElementById('cfgApiKey').value.trim();
-  var model = document.getElementById('cfgModel').value.trim()  || 'deepseek-chat';
-  var url   = document.getElementById('cfgUrl').value.trim()    || 'https://nodeghost.ai/v1';
-  cfg = { apiKey: key, model: model, url: url };
-  localStorage.setItem('ng_api_key', key);
-  localStorage.setItem('ng_model',   model);
-  localStorage.setItem('ng_url',     url);
+  var key         = document.getElementById('cfgApiKey').value.trim();
+  var model       = document.getElementById('cfgModel').value.trim()       || 'deepseek-chat';
+  var url         = document.getElementById('cfgUrl').value.trim()         || 'https://nodeghost.ai/v1';
+  var endpointKey = document.getElementById('cfgEndpointKey').value.trim() || '';
+  cfg = { apiKey: key, model: model, url: url, endpointKey: endpointKey };
+  localStorage.setItem('ng_api_key',      key);
+  localStorage.setItem('ng_model',        model);
+  localStorage.setItem('ng_url',          url);
+  localStorage.setItem('ng_endpoint_key', endpointKey);
   var saved = document.getElementById('cfgSaved');
   saved.textContent = '✓ Saved';
   setTimeout(function() { saved.textContent = ''; }, 2000);
@@ -1040,7 +1054,7 @@ async function memoryRecall(query) {
   try {
     var res = await fetchWithTimeout(MEMORY_URL + '/recall', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
       body:    JSON.stringify({ query: query, namespace: 'knowledge-base', topK: 3 }),
     }, 5000);
     if (res.ok) {
@@ -1056,7 +1070,7 @@ async function memoryRecall(query) {
     try {
       var res2 = await fetchWithTimeout(MEMORY_URL + '/recall', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
         body:    JSON.stringify({ query: query, namespace: 'default', topK: 5 }),
       }, 5000);
       if (res2.ok) {
@@ -1087,7 +1101,7 @@ async function memoryStore(userMsg, assistantMsg) {
 
     var res = await fetchWithTimeout(cfg.url + '/chat/completions', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
       body:    JSON.stringify({
         model:       cfg.model,
         messages:    [{ role: 'user', content: prompt }],
@@ -1117,7 +1131,7 @@ async function memoryStore(userMsg, assistantMsg) {
 
       fetchWithTimeout(MEMORY_URL + '/store', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
         body:    JSON.stringify({ text: textToStore, namespace: 'default' }),
       }, 10000).catch(function() {});
     }
@@ -1231,7 +1245,7 @@ async function runAgent() {
           try {
             var sres = await fetchWithTimeout('https://nodeghost.ai/v1/tools/search', {
               method:  'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
               body:    JSON.stringify({ query: query, count: 5 }),
             }, TIMEOUT_MS);
             var sdata  = await sres.json();
