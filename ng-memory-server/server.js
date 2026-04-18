@@ -154,6 +154,7 @@ function isValidKey(key) {
 }
 
 function getAuth(req) {
+  console.log('[debug] headers:', JSON.stringify(req.headers));
   const key = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
   if (!isValidKey(key)) return null;
   return { apiKey: key, ownerId: hashKey(key) };
@@ -368,7 +369,7 @@ const server = http.createServer(async function(req, res) {
   // When called via POKT relay miners, no auth header is present — use relay-default namespace
   // When called directly with an ng- key, use that key for namespace isolation
   const auth = getAuth(req);
-  const { apiKey, ownerId } = auth || { apiKey: '', ownerId: 'relay-default' };
+  let { apiKey, ownerId } = auth || { apiKey: '', ownerId: 'relay-default' };
 
   try {
 
@@ -436,6 +437,7 @@ const server = http.createServer(async function(req, res) {
       const topK      = parseInt(body.topK) || 5;
       const vector    = Array.isArray(body.vector) ? body.vector : null;
       if (!query) { json(res, 400, { error: 'query required' }); return; }
+      if (body.owner_token && isValidKey(body.owner_token)) { ownerId = hashKey(body.owner_token); }
       const db       = getDB(ownerId, namespace);
       const memories = await recall(db, query, vector, topK);
       const texts    = memories.map(m => m.text);
@@ -449,6 +451,7 @@ const server = http.createServer(async function(req, res) {
       const namespace = (body.namespace || req.headers['x-namespace'] || 'default').trim();
       const { userMsg, assistantMsg } = body;
       if (!userMsg || !assistantMsg) { json(res, 400, { error: 'userMsg and assistantMsg required' }); return; }
+      if (body.owner_token && isValidKey(body.owner_token)) { ownerId = hashKey(body.owner_token); }
       const facts = await extractFacts(userMsg, assistantMsg, apiKey);
       if (!facts.length) { json(res, 200, { ok: true, stored: 0 }); return; }
       const db  = getDB(ownerId, namespace);
@@ -475,6 +478,7 @@ const server = http.createServer(async function(req, res) {
       const text      = (body.text || '').trim();
       const meta      = body.meta || {};
       if (!text) { json(res, 400, { error: 'text required' }); return; }
+      if (body.owner_token && isValidKey(body.owner_token)) { ownerId = hashKey(body.owner_token); }
       // Accept pre-computed vector or compute one
       let vector = Array.isArray(body.vector) ? body.vector : null;
       if (!vector) { try { vector = await embed(text); } catch {} }

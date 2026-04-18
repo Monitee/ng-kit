@@ -1055,7 +1055,7 @@ async function memoryRecall(query) {
     var res = await fetchWithTimeout(MEMORY_URL + '/recall', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
-      body:    JSON.stringify({ query: query, namespace: 'knowledge-base', topK: 3 }),
+      body:    JSON.stringify({ query: query, namespace: 'knowledge-base', topK: 3, owner_token: cfg.apiKey }),
     }, 5000);
     if (res.ok) {
       var data = await res.json();
@@ -1071,7 +1071,7 @@ async function memoryRecall(query) {
       var res2 = await fetchWithTimeout(MEMORY_URL + '/recall', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
-        body:    JSON.stringify({ query: query, namespace: 'default', topK: 5 }),
+        body:    JSON.stringify({ query: query, namespace: 'default', topK: 5, owner_token: cfg.apiKey }),
       }, 5000);
       if (res2.ok) {
         var data2 = await res2.json();
@@ -1132,7 +1132,7 @@ async function memoryStore(userMsg, assistantMsg) {
       fetchWithTimeout(MEMORY_URL + '/store', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, ...(cfg.endpointKey ? {'X-Endpoint-Key': cfg.endpointKey} : {}) },
-        body:    JSON.stringify({ text: textToStore, namespace: 'default' }),
+        body:    JSON.stringify({ text: textToStore, namespace: 'default', owner_token: cfg.apiKey }),
       }, 10000).catch(function() {});
     }
   } catch {}
