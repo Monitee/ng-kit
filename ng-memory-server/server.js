@@ -154,7 +154,6 @@ function isValidKey(key) {
 }
 
 function getAuth(req) {
-  console.log('[debug] headers:', JSON.stringify(req.headers));
   const key = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
   if (!isValidKey(key)) return null;
   return { apiKey: key, ownerId: hashKey(key) };
