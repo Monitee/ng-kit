@@ -109,14 +109,7 @@
       }
 
       // Make the actual request
-      // Extract URL from input (may be string or Request object)
-      // Pass as string + init to ensure custom headers (X-Endpoint-Key etc) are forwarded
-      const requestUrl = typeof input === 'string' ? input : input.url;
-      const originalHeaders = typeof input === 'object' && input.headers
-        ? Object.fromEntries(input.headers.entries())
-        : {};
-      init = { ...init, headers: { ...originalHeaders, ...(init.headers || {}) } };
-      const response = await originalFetch(requestUrl, init);
+      const response = await originalFetch(input, init);
 
       // Capture response for memory extraction (clone so body can be read twice)
       const responseClone = response.clone();
