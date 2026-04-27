@@ -11,6 +11,7 @@ services:
       - "3100:3100"
     volumes:
       - ./data:/data
+      - model-cache:/root/.cache/huggingface
     environment:
       - PORT=3100
       - DATA_DIR=/data
@@ -19,3 +20,8 @@ services:
       - CORS_ORIGINS=*
       # Optional: restrict to specific ng- keys
       # - ALLOWED_KEYS=ng-key1,ng-key2
+      # Required for persistent admin panel access:
+      # - ADMIN_TOKEN=your-secret-token-here
+
+volumes:
+  model-cache:

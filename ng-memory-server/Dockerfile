@@ -9,6 +9,7 @@ COPY package.json .
 RUN npm install --omit=dev
 
 COPY server.js .
+COPY admin.html .
 
 RUN mkdir -p /data
 
