@@ -1,7 +1,7 @@
 'use strict';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ng-memory-server v0.5.0
+// ng-memory-server v0.6.1
 // Multi-tenant private AI memory server with built-in document ingestion
 // Supports: PDF, TXT, MD, HTML — chunked, embedded, stored automatically
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,12 +127,27 @@ function sanitizeUserId(raw) {
 }
 
 // Returns { apiKey, orgHash, userId } or null if no valid ng- key found.
-// Auth: Authorization header takes priority, body.owner_token accepted for backward compat.
-// user_id: body.user_id (new), fallback 'default'.
+//
+// ⚠️  BODY-FIRST IDENTITY — DO NOT FLIP THIS TERNARY. HERE IS WHY:
+//
+// POKT relay miners inject their own bearer token into the Authorization header before
+// forwarding requests to this server. That token starts with "ng-" and passes isValidKey(),
+// so putting the header first means EVERY relay-routed call lands under the relay miner's
+// orgHash — completely destroying per-org data isolation regardless of ALLOWED_KEYS.
+//
+// body.owner_token is the only identity field that survives the relay path untouched, so
+// it must win whenever present. The Authorization header is still validated by nginx's
+// auth_request BEFORE the request reaches this server (quota gating, access control) — by
+// the time we get here, customer identity must come from body.owner_token.
+//
+// Header fallback is kept for direct calls (dev, admin, non-relay paths) where no relay
+// miner is in the chain and owner_token may legitimately be absent.
+//
+// user_id: body.user_id (sanitized), fallback 'default'.
 function getIdentity(req, body) {
   const headerKey = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
   const bodyKey   = (body && typeof body.owner_token === 'string') ? body.owner_token : '';
-  const key = isValidKey(headerKey) ? headerKey : isValidKey(bodyKey) ? bodyKey : null;
+  const key = isValidKey(bodyKey) ? bodyKey : isValidKey(headerKey) ? headerKey : null;
   if (!key) return null;
   return {
     apiKey:  key,
@@ -168,10 +183,11 @@ function initDB(db) {
 }
 
 // Two-level isolation: data/{orgHash}/{userId}/{namespace}.db
-// knowledge-base always routes to kb-shared/shared regardless of caller.
+// v0.6.0 BREAKING: authenticated knowledge-base → data/{orgHash}/kb/shared.db (per-org).
+// Public recall bypasses this function and calls getDB('kb-shared','shared','shared') directly.
 // Falls back to old flat data/{orgHash}/{namespace}.db if new path doesn't exist yet.
 function getDB(orgHash, userId, namespace) {
-  if (namespace === 'knowledge-base') { orgHash = 'kb-shared'; userId = 'shared'; }
+  if (namespace === 'knowledge-base') { userId = 'kb'; namespace = 'shared'; }
 
   const cacheKey = `${orgHash}/${userId}/${namespace}`;
   if (dbCache.has(cacheKey)) return dbCache.get(cacheKey);
@@ -267,10 +283,11 @@ function parseMultipart(req) {
         const buf     = Buffer.concat(chunks);
         const bodyStr = buf.toString('binary');
         const parts   = bodyStr.split('--' + boundary);
-        let filename   = null;
-        let fileBuffer = null;
-        let namespace  = 'knowledge-base';
-        let userId     = 'default';
+        let filename    = null;
+        let fileBuffer  = null;
+        let namespace   = 'knowledge-base';
+        let userId      = 'default';
+        let ownerToken  = '';
 
         for (const part of parts) {
           if (!part.includes('Content-Disposition')) continue;
@@ -288,10 +305,12 @@ function parseMultipart(req) {
             namespace = content.trim();
           } else if (nameMatch && nameMatch[1] === 'user_id') {
             userId = content.trim();
+          } else if (nameMatch && nameMatch[1] === 'owner_token') {
+            ownerToken = content.trim();
           }
         }
 
-        resolve({ filename, fileBuffer, namespace, userId });
+        resolve({ filename, fileBuffer, namespace, userId, ownerToken });
       } catch (err) { reject(err); }
     });
   });
@@ -338,7 +357,7 @@ const server = http.createServer(async function(req, res) {
 
   // ── Health ─────────────────────────────────────────────────────────────────
   if (method === 'GET' && matchPath(url, 'health')) {
-    json(res, 200, { status: 'ok', version: '0.5.0', timestamp: new Date().toISOString() });
+    json(res, 200, { status: 'ok', version: '0.6.1', timestamp: new Date().toISOString() });
     return;
   }
 
@@ -367,7 +386,7 @@ const server = http.createServer(async function(req, res) {
       const vec   = Array.isArray(body.vector) ? body.vector : null;
       if (!query) { json(res, 400, { error: 'query required' }); return; }
 
-      const db       = getDB('kb-shared', 'shared', 'knowledge-base');
+      const db       = getDB('kb-shared', 'shared', 'shared');
       const memories = await recall(db, query, vec, topK);
       const texts    = memories.map(m => m.text);
       json(res, 200, {
@@ -382,22 +401,22 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // ── POST /upload — multipart, auth from header only ────────────────────────
+  // ── POST /upload — multipart, identity via getIdentity() (body-first) ────────
   if (method === 'POST' && matchPath(url, 'upload')) {
-    const headerKey = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
-    if (!isValidKey(headerKey)) {
-      json(res, 401, { error: 'Valid ng- API key required in Authorization header for uploads' });
-      return;
-    }
-    const orgHash = hashKey(headerKey);
-
     let parsed;
     try { parsed = await parseMultipart(req); } catch (err) {
       json(res, 400, { error: 'Multipart parse failed: ' + err.message }); return;
     }
 
-    const { filename, fileBuffer, namespace, userId: rawUserId } = parsed;
-    const userId = sanitizeUserId(rawUserId);
+    const { filename, fileBuffer, namespace, userId: rawUserId, ownerToken } = parsed;
+    // Synthetic body lets getIdentity() apply the same body-first priority as JSON endpoints.
+    // owner_token form field survives relay paths; Authorization header fallback for direct calls.
+    const uploadIdentity = getIdentity(req, { owner_token: ownerToken, user_id: rawUserId });
+    if (!uploadIdentity) {
+      json(res, 401, { error: 'Valid ng- API key required (Authorization header or owner_token form field)' });
+      return;
+    }
+    const { orgHash, userId } = uploadIdentity;
 
     if (!filename || !fileBuffer) { json(res, 400, { error: 'No file in request' }); return; }
     const ext     = path.extname(filename).toLowerCase();
@@ -578,6 +597,25 @@ const server = http.createServer(async function(req, res) {
       return;
     }
 
+    // ── POST /clear — delete all namespaces for a user ─────────────────────
+    if (method === 'POST' && matchPath(url, 'clear')) {
+      const userDir = path.join(CONFIG.DATA_DIR, orgHash, userId);
+      let deleted = 0;
+      if (fs.existsSync(userDir)) {
+        const dbFiles = fs.readdirSync(userDir).filter(function(f) { return f.endsWith('.db'); });
+        deleted = dbFiles.length;
+        for (const f of dbFiles) {
+          const ns       = f.replace(/\.db$/, '');
+          const cacheKey = `${orgHash}/${userId}/${ns}`;
+          const cached   = dbCache.get(cacheKey);
+          if (cached) { try { cached.close(); } catch {} dbCache.delete(cacheKey); }
+        }
+        fs.rmSync(userDir, { recursive: true, force: true });
+      }
+      json(res, 200, { ok: true, deleted_namespaces: deleted });
+      return;
+    }
+
     json(res, 404, { error: 'Not found' });
 
   } catch (err) {
@@ -587,7 +625,7 @@ const server = http.createServer(async function(req, res) {
 });
 
 server.listen(CONFIG.PORT, function() {
-  console.log('\n👻 ng-memory-server v0.5.0');
+  console.log('\n👻 ng-memory-server v0.6.1');
   console.log('─────────────────────────────────────');
   console.log('Port:              ' + CONFIG.PORT);
   console.log('Data dir:          ' + CONFIG.DATA_DIR);
@@ -602,6 +640,7 @@ server.listen(CONFIG.PORT, function() {
   console.log('  POST   /recall           semantic recall (vector or keyword)');
   console.log('  POST   /store            store single memory');
   console.log('  POST   /ingest           bulk store pre-chunked content');
+  console.log('  POST   /clear            delete all namespaces for a user');
   console.log('  GET    /list             list memories in namespace');
   console.log('  GET    /sources          list document sources');
   console.log('  GET    /namespaces       list namespaces for user');
@@ -610,10 +649,11 @@ server.listen(CONFIG.PORT, function() {
   console.log('  DELETE /memories         clear namespace');
   console.log('  DELETE /memories/:id     forget one memory');
   console.log('─────────────────────────────────────');
-  console.log('Identity model:');
+  console.log('Identity model (v0.6.1 — body-first):');
   console.log('  orgHash = SHA256(ng-key).slice(0,32)');
   console.log('  userId  = body.user_id (sanitized) or "default"');
   console.log('  path    = data/{orgHash}/{userId}/{namespace}.db');
-  console.log('  kb      = data/kb-shared/shared/knowledge-base.db (always)');
+  console.log('  kb auth = data/{orgHash}/kb/shared.db  (per-org, v0.6.0+)');
+  console.log('  kb pub  = data/kb-shared/shared/shared.db  (public/recall only)');
   console.log('─────────────────────────────────────\n');
 });
