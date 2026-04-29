@@ -1,7 +1,7 @@
 'use strict';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ng-memory-server v0.6.1
+// ng-memory-server v0.6.4
 // Multi-tenant private AI memory server with built-in document ingestion
 // Supports: PDF, TXT, MD, HTML — chunked, embedded, stored automatically
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,50 +271,6 @@ function readBody(req) {
   });
 }
 
-function parseMultipart(req) {
-  return new Promise(function(resolve, reject) {
-    const contentType = req.headers['content-type'] || '';
-    const boundary    = contentType.split('boundary=')[1];
-    if (!boundary) { reject(new Error('No boundary')); return; }
-    const chunks = [];
-    req.on('data', function(d) { chunks.push(d); });
-    req.on('end', function() {
-      try {
-        const buf     = Buffer.concat(chunks);
-        const bodyStr = buf.toString('binary');
-        const parts   = bodyStr.split('--' + boundary);
-        let filename    = null;
-        let fileBuffer  = null;
-        let namespace   = 'knowledge-base';
-        let userId      = 'default';
-        let ownerToken  = '';
-
-        for (const part of parts) {
-          if (!part.includes('Content-Disposition')) continue;
-          const headerEnd = part.indexOf('\r\n\r\n');
-          if (headerEnd === -1) continue;
-          const header  = part.slice(0, headerEnd);
-          const content = part.slice(headerEnd + 4, part.lastIndexOf('\r\n'));
-          const nameMatch = header.match(/name="([^"]+)"/);
-          const fileMatch = header.match(/filename="([^"]+)"/);
-
-          if (fileMatch) {
-            filename   = fileMatch[1];
-            fileBuffer = Buffer.from(content, 'binary');
-          } else if (nameMatch && nameMatch[1] === 'namespace') {
-            namespace = content.trim();
-          } else if (nameMatch && nameMatch[1] === 'user_id') {
-            userId = content.trim();
-          } else if (nameMatch && nameMatch[1] === 'owner_token') {
-            ownerToken = content.trim();
-          }
-        }
-
-        resolve({ filename, fileBuffer, namespace, userId, ownerToken });
-      } catch (err) { reject(err); }
-    });
-  });
-}
 
 function makeId(orgHash, userId) {
   return orgHash.slice(0, 6) + userId.slice(0, 6) + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
@@ -357,7 +313,7 @@ const server = http.createServer(async function(req, res) {
 
   // ── Health ─────────────────────────────────────────────────────────────────
   if (method === 'GET' && matchPath(url, 'health')) {
-    json(res, 200, { status: 'ok', version: '0.6.1', timestamp: new Date().toISOString() });
+    json(res, 200, { status: 'ok', version: '0.6.4', timestamp: new Date().toISOString() });
     return;
   }
 
@@ -401,35 +357,46 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // ── POST /upload — multipart, identity via getIdentity() (body-first) ────────
+  // ── POST /upload — JSON body: { filename, content_base64, namespace?, user_id?, owner_token }
+  // Base64 JSON encoding avoids the Content-Type: multipart/form-data stripping that relay
+  // miners perform, which was the structural blocker for uploads through PATH.
   if (method === 'POST' && matchPath(url, 'upload')) {
-    let parsed;
-    try { parsed = await parseMultipart(req); } catch (err) {
-      json(res, 400, { error: 'Multipart parse failed: ' + err.message }); return;
-    }
-
-    const { filename, fileBuffer, namespace, userId: rawUserId, ownerToken } = parsed;
-    // Synthetic body lets getIdentity() apply the same body-first priority as JSON endpoints.
-    // owner_token form field survives relay paths; Authorization header fallback for direct calls.
-    const uploadIdentity = getIdentity(req, { owner_token: ownerToken, user_id: rawUserId });
-    if (!uploadIdentity) {
-      json(res, 401, { error: 'Valid ng- API key required (Authorization header or owner_token form field)' });
+    const body     = await readBody(req);
+    const identity = getIdentity(req, body);
+    if (!identity) {
+      json(res, 401, { error: 'Valid ng- API key required (Authorization header or owner_token in body)' });
       return;
     }
-    const { orgHash, userId } = uploadIdentity;
+    const { orgHash, userId } = identity;
 
-    if (!filename || !fileBuffer) { json(res, 400, { error: 'No file in request' }); return; }
+    const filename    = (body.filename    || '').trim();
+    const contentB64  = (body.content_base64 || '').trim();
+    const namespace   = (body.namespace   || 'knowledge-base').trim();
+
+    if (!filename)   { json(res, 400, { error: 'filename is required' }); return; }
+    if (!contentB64) { json(res, 400, { error: 'content_base64 is required' }); return; }
+
+    // ~13.5MB base64 ≈ 10MB binary — reject before any processing
+    if (contentB64.length > 13_500_000) {
+      json(res, 413, { ok: false, error: 'File exceeds 10MB limit. For larger documents, extract text first and upload as .txt or .md.' });
+      return;
+    }
+
     const ext     = path.extname(filename).toLowerCase();
     const allowed = ['.pdf', '.txt', '.md', '.markdown', '.html', '.htm'];
     if (!allowed.includes(ext)) {
       json(res, 400, { error: 'Unsupported file type. Supported: ' + allowed.join(', ') }); return;
     }
 
+    let fileBuffer;
+    try {
+      fileBuffer = Buffer.from(contentB64, 'base64');
+    } catch (err) {
+      json(res, 400, { error: 'Invalid base64 content' }); return;
+    }
+
     const tmpPath = path.join(os.tmpdir(), 'ng-ingest-' + Date.now() + ext);
     fs.writeFileSync(tmpPath, fileBuffer);
-
-    res.writeHead(202, { 'Content-Type': 'application/json' });
-    res.write(JSON.stringify({ ok: true, status: 'processing', filename, namespace, userId }) + '\n');
 
     try {
       console.log(`[ng-memory] Extracting text from ${filename}...`);
@@ -447,13 +414,12 @@ const server = http.createServer(async function(req, res) {
       const db = getDB(orgHash, userId, namespace);
       storeChunks(db, embedded, orgHash, userId, namespace, filename);
       console.log(`[ng-memory] Stored ${embedded.length} chunks from ${filename} → ${orgHash}/${userId}/${namespace}`);
-      res.write(JSON.stringify({ ok: true, status: 'complete', filename, namespace, userId, chunks: embedded.length }) + '\n');
+      json(res, 200, { ok: true, status: 'complete', filename, namespace, userId, chunks: embedded.length });
     } catch (err) {
       console.error('[ng-memory] Ingest error:', err.message);
-      res.write(JSON.stringify({ ok: false, status: 'error', error: err.message }) + '\n');
+      json(res, 500, { ok: false, status: 'error', error: err.message });
     } finally {
       try { fs.unlinkSync(tmpPath); } catch {}
-      res.end();
     }
     return;
   }
@@ -513,9 +479,9 @@ const server = http.createServer(async function(req, res) {
       return;
     }
 
-    // ── GET /list ──────────────────────────────────────────────────────────
-    if (method === 'GET' && matchPath(url, 'list')) {
-      const namespace = (req.headers['x-namespace'] || 'default').trim();
+    // ── POST /list ─────────────────────────────────────────────────────────
+    if (method === 'POST' && matchPath(url, 'list')) {
+      const namespace = (body.namespace || req.headers['x-namespace'] || 'default').trim();
       const db        = getDB(orgHash, userId, namespace);
       const all       = db.prepare('SELECT id, text, timestamp, meta FROM memories ORDER BY timestamp DESC').all();
       json(res, 200, {
@@ -525,9 +491,9 @@ const server = http.createServer(async function(req, res) {
       return;
     }
 
-    // ── GET /sources ───────────────────────────────────────────────────────
-    if (method === 'GET' && matchPath(url, 'sources')) {
-      const namespace = (req.headers['x-namespace'] || 'knowledge-base').trim();
+    // ── POST /sources ──────────────────────────────────────────────────────
+    if (method === 'POST' && matchPath(url, 'sources')) {
+      const namespace = (body.namespace || req.headers['x-namespace'] || 'knowledge-base').trim();
       const db        = getDB(orgHash, userId, namespace);
       const all       = db.prepare('SELECT meta FROM memories').all();
       const sourceMap = {};
@@ -542,8 +508,8 @@ const server = http.createServer(async function(req, res) {
       return;
     }
 
-    // ── GET /namespaces ────────────────────────────────────────────────────
-    if (method === 'GET' && matchPath(url, 'namespaces')) {
+    // ── POST /namespaces ───────────────────────────────────────────────────
+    if (method === 'POST' && matchPath(url, 'namespaces')) {
       const userDir = path.join(CONFIG.DATA_DIR, orgHash, userId);
       if (!fs.existsSync(userDir)) { json(res, 200, { ok: true, userId, namespaces: [] }); return; }
       const namespaces = fs.readdirSync(userDir).filter(f => f.endsWith('.db')).map(function(f) {
@@ -557,9 +523,9 @@ const server = http.createServer(async function(req, res) {
       return;
     }
 
-    // ── GET /stats ─────────────────────────────────────────────────────────
-    if (method === 'GET' && matchPath(url, 'stats')) {
-      const namespace = (req.headers['x-namespace'] || 'default').trim();
+    // ── POST /stats ────────────────────────────────────────────────────────
+    if (method === 'POST' && matchPath(url, 'stats')) {
+      const namespace = (body.namespace || req.headers['x-namespace'] || 'default').trim();
       const db        = getDB(orgHash, userId, namespace);
       const count     = db.prepare('SELECT COUNT(*) as c FROM memories').get().c;
       const vecs      = db.prepare("SELECT COUNT(*) as c FROM memories WHERE vector IS NOT NULL").get().c;
@@ -625,7 +591,7 @@ const server = http.createServer(async function(req, res) {
 });
 
 server.listen(CONFIG.PORT, function() {
-  console.log('\n👻 ng-memory-server v0.6.1');
+  console.log('\n👻 ng-memory-server v0.6.4');
   console.log('─────────────────────────────────────');
   console.log('Port:              ' + CONFIG.PORT);
   console.log('Data dir:          ' + CONFIG.DATA_DIR);
@@ -641,15 +607,15 @@ server.listen(CONFIG.PORT, function() {
   console.log('  POST   /store            store single memory');
   console.log('  POST   /ingest           bulk store pre-chunked content');
   console.log('  POST   /clear            delete all namespaces for a user');
-  console.log('  GET    /list             list memories in namespace');
-  console.log('  GET    /sources          list document sources');
-  console.log('  GET    /namespaces       list namespaces for user');
-  console.log('  GET    /stats            memory count + RAG status');
+  console.log('  POST   /list             list memories in namespace');
+  console.log('  POST   /sources          list document sources');
+  console.log('  POST   /namespaces       list namespaces for user');
+  console.log('  POST   /stats            memory count + RAG status');
   console.log('  DELETE /source           remove document by source name');
   console.log('  DELETE /memories         clear namespace');
   console.log('  DELETE /memories/:id     forget one memory');
   console.log('─────────────────────────────────────');
-  console.log('Identity model (v0.6.1 — body-first):');
+  console.log('Identity model (v0.6.4 — body-first):');
   console.log('  orgHash = SHA256(ng-key).slice(0,32)');
   console.log('  userId  = body.user_id (sanitized) or "default"');
   console.log('  path    = data/{orgHash}/{userId}/{namespace}.db');
