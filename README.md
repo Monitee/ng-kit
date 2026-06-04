@@ -1,3 +1,12 @@
+> [!WARNING]
+> **Status: active refactor — not a stable release.**
+> ng-kit is being reworked, the memory components most of all. Older builds and
+> documentation in this repo may describe behavior — including privacy and
+> encryption guarantees — that no longer matches how the current code works.
+> Until the memory rework lands, treat the privacy claims in older READMEs as
+> out of date rather than authoritative, and don't rely on anything here for
+> sensitive data.
+
 # ng-kit
 
 Everything you need to build private AI products on [NodeGhost](https://nodeghost.ai) and POKT Network.
